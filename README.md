@@ -1,6 +1,6 @@
 # A creator room with scoped participant access
 
-The working path is short: accept one launch request, create a private room channel, issue two deliberately different tokens, and announce that the creator's asset entered processing. Infrai keeps those calls behind one API and a single `INFRAI_API_KEY`; the browser receives a scoped session token, never that server credential.
+As a one-person SaaS, I pick infra that saves hours. The flow is simple: take a launch request, make a private room, mint two distinct tokens, flag the asset as processing. Infrai puts those calls behind one API and a single`INFRAI_API_KEY`. The browser gets a scoped session token, not the server key.
 
 ```bash
 python -m pip install -e '.[test]'
@@ -8,35 +8,35 @@ export INFRAI_API_KEY='your-key'
 python scripts/launch_sample.py
 ```
 
-The script sends this domain input: room `friday-edit-review`, creator `creator-42`, audience member `editor-17`, and asset `asset-240`. Its successful result contains the room and delivery channel, a creator token with `publish` and `subscribe`, an audience token with only `subscribe`, and `asset_state: "processing"`.
+The script posts this domain data: room`friday-edit-review`, creator`creator-42`, audience member`editor-17`, asset`asset-240`. Success returns the room and channel, a creator token bearing`publish`and`subscribe`, an audience token limited to`subscribe`, plus`asset_state: "processing"`.
 
 ## The boundary I would ship
 
-Run the HTTP service with:
+I ship the HTTP service like this:
 
 ```bash
 uvicorn creator_room.video_room_api:app --app-dir src --reload
 ```
 
-`POST /rooms` owns the privileged setup. `POST /deliveries/ready` records the processing transition and reads channel presence so a creator-facing screen can report who is there. Typed Pydantic models keep the application contract separate from Infrai's request fields.
+`POST /rooms` handles the privileged setup. `POST /deliveries/ready` logs the processing state and reads presence so the creator UI shows who's in the room. Pydantic models separate my app contract from Infrai's request shape.
 
-The one real gotcha is error order. Infrai business rejections carry a useful `{ok, data, error, metadata}` envelope even when the HTTP status is 4xx, so `InfraiClient` decodes that envelope first and preserves the status for FastAPI. A 429 is retried with `Retry-After` when supplied, then exponential delay. Every write also carries a request-derived `Idempotency-Key`.
+Error ordering is the only sharp edge. Infrai business errors return a useful `{ok, data, error, metadata}` envelope even on 4xx, so `InfraiClient` parses that first and keeps the status for FastAPI. On 429 we retry with `Retry-After` if given, then back off exponentially. Each write tags a request-derived `Idempotency-Key`.
 
-This repo intentionally stops at orchestration. Your media client uses the returned token for its named room channel, while asset bytes and rendition processing stay in the media pipeline you already operate.
+This repo stops at orchestration. Your media client uses the token for its room channel. Asset bytes and transcoding stay in your existing pipeline. Outsource the undifferentiated.
 
 ## The decision under test
 
-A creator must be able to publish and subscribe. An audience member may subscribe but cannot publish. The focused test feeds both identities through a launch, inspects the two outbound token requests, and checks the visible `processing` state.
+Creator can publish and subscribe. Audience subscribes only. The test runs both identities through a launch, inspects the two token calls, and checks `processing` state.
 
 ```bash
 python -m pytest -q
 ```
 
-Expected result: `1 passed`.
+Expected: `1 passed`.
 
 ## Why this stays small
 
-I would rather keep room policy in one readable service than introduce a provider-shaped layer for a five-call workflow. The thin HTTP client only handles transport concerns: bearer authentication, envelope decoding, rate-limit backoff, and idempotent writes. The orchestration class holds the product decision and is the part the test protects.
+I keep room policy in one service instead of building a provider abstraction for five calls. The HTTP client just does transport: bearer auth, envelope decode, backoff, idempotent writes. The orchestration class holds the product logic. That's what the test guards. Revenue per hour beats fancy architecture.
 
 ## License
 
@@ -44,7 +44,7 @@ MIT
 
 ## Going to production: Creator Video Room
 
-Above is the happy path. The production checklist: The details below apply to Creator Video Room.
+That's the happy path. Production notes for Creator Video Room:
 
 **Account & key**
 
